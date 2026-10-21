@@ -1,0 +1,25 @@
+{
+  "name": "automation_ecm",
+  "version": "1.0.0",
+  "description": "K2 SmartForms & ECM Automation Suite for Eigerindo",
+  "main": "src/index.js",
+  "scripts": {
+    "login": "node src/login.js",
+    "create-ticket": "node src/create_ticket.js",
+    "test": "echo \"No test specified\" && exit 0"
+  },
+  "keywords": [
+    "k2",
+    "automation",
+    "smartforms",
+    "ecm",
+    "eigerindo"
+  ],
+  "author": "Zul Yatman",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "puppeteer-core": "^24.2.0"
+  }
+}
