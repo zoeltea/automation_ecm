@@ -1,5 +1,6 @@
 require('dotenv').config();
 const puppeteer = require('puppeteer-core');
+const { getChromePath, BASE_URL, USERNAME, PASSWORD, CDP_ENDPOINT, USER_DATA_DIR } = require('./config');
 
 /**
  * Script Automasi Login ECM / K2 Workspace
@@ -9,16 +10,14 @@ const puppeteer = require('puppeteer-core');
  * npm run login
  */
 
-const BASE_URL = process.env.ECM_BASE_URL || 'https://ecm-uat-k2.eigerindo.co.id';
 const LOGIN_URL = `${BASE_URL}/Workspace/`;
-const USERNAME = process.env.ECM_USERNAME;
-const PASSWORD = process.env.ECM_PASSWORD;
-const CDP_ENDPOINT = process.env.CDP_WS_ENDPOINT;
 
 async function login() {
   if (!USERNAME || !PASSWORD) {
-    console.error('❌ Error: ECM_USERNAME atau ECM_PASSWORD belum diset!');
-    console.error('Silakan salin .env.example menjadi .env lalu isi kredensial Anda.');
+    console.error('❌ Error: ECM_USERNAME atau ECM_PASSWORD belum diset di file .env!');
+    console.error('Silakan buat file .env dari .env.example lalu isi:');
+    console.error('ECM_USERNAME=username_anda');
+    console.error('ECM_PASSWORD=password_anda');
     process.exit(1);
   }
 
@@ -32,30 +31,28 @@ async function login() {
       console.log(`📡 Menghubungkan ke browser via CDP: ${CDP_ENDPOINT}`);
       browser = await puppeteer.connect({ browserWSEndpoint: CDP_ENDPOINT });
     } else {
-      // Mencoba mencari executable Chrome lokal atau koneksi default
-      const executablePath = process.env.CHROME_PATH || 
-        (process.platform === 'win32' 
-          ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' 
-          : '/usr/bin/google-chrome' || '/usr/bin/chromium-browser');
-          
+      const executablePath = getChromePath();
+      console.log(`🌐 Membuka Chrome browser (${executablePath})...`);
       browser = await puppeteer.launch({
         headless: false,
         executablePath: executablePath,
+        userDataDir: USER_DATA_DIR,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--ignore-certificate-errors'
+          '--ignore-certificate-errors',
+          '--start-maximized'
         ]
       });
     }
 
-    const page = await browser.newPage();
+    const pages = await browser.pages();
+    const page = pages[0] || (await browser.newPage());
     await page.setViewport({ width: 1366, height: 768 });
 
-    console.log('⏳ Membuka halaman login...');
+    console.log('⏳ Membuka halaman Workspace / Login...');
     await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Cek apakah halaman redirect ke Form STS Login
     const currentUrl = page.url();
     console.log(`📍 Halaman saat ini: ${currentUrl}`);
 
@@ -66,7 +63,6 @@ async function login() {
       await page.type('#Password', PASSWORD, { delay: 50 });
 
       console.log('🔘 Klik tombol Sign In / Submit...');
-      // Form STS K2 biasanya menggunakan submit button atau input button
       const submitBtn = await page.$('input[type="submit"], button[type="submit"], a.button');
       if (submitBtn) {
         await Promise.all([
@@ -85,16 +81,12 @@ async function login() {
       console.log('ℹ️ Sudah dalam status login (sesi aktif).');
     }
 
-    // Verifikasi URL akhir
     console.log(`🎉 URL Setelah Login: ${page.url()}`);
-    console.log('✨ Sesi login K2 berhasil.');
+    console.log('✨ Sesi login K2 berhasil disimpan di .chrome_session.');
 
     return { success: true, page, browser };
   } catch (error) {
     console.error('❌ Terjadi kesalahan saat proses login:', error.message);
-    if (browser && !CDP_ENDPOINT) {
-      await browser.close();
-    }
     throw error;
   }
 }
@@ -102,7 +94,8 @@ async function login() {
 if (require.main === module) {
   login().then(() => {
     console.log('Selesai.');
-  }).catch(() => {
+  }).catch((err) => {
+    console.error(err);
     process.exit(1);
   });
 }

@@ -1,11 +1,10 @@
 require('dotenv').config();
+const { getChromePath, FORM_URL, CDP_ENDPOINT, USER_DATA_DIR } = require('./config');
 
 /**
  * K2 SmartForms GA Service Ticket Automation Module
  * Target: https://ecm-uat-k2.eigerindo.co.id/Workspace/Form/f.25.GAServiceTicketing
  */
-
-const FORM_URL = process.env.K2_FORM_URL || "https://ecm-uat-k2.eigerindo.co.id/Workspace/Form/f.25.GAServiceTicketing";
 
 /**
  * Client-side script injected into K2 SmartForms (DOM/browser context)
@@ -13,9 +12,8 @@ const FORM_URL = process.env.K2_FORM_URL || "https://ecm-uat-k2.eigerindo.co.id/
 function createTicketWorkflow(ticketData = {}) {
   const {
     ticketType = "GA HO",
-    serviceType = "Layanan Kantor (Office Service)",
     description = "Automated Test GA Service Ticket " + new Date().toLocaleString("id-ID"),
-    detailServiceIndex = 1
+    detailService = "Layanan Fasilitas Ruang Meeting (kebersihan dan kerapihan)"
   } = ticketData;
 
   let doc = document;
@@ -28,10 +26,7 @@ function createTicketWorkflow(ticketData = {}) {
     try {
       console.log("[K2 Auto] Memulai pengisian form tiket...");
 
-      // 1. Pilih Type of Ticket jika perlu
-      const ticketTypeBtn = doc.querySelector('a[id*="Type of Ticket"], div[name*="Type of Ticket"] a.drop-menu, a.drop-menu');
-      
-      // 2. Set Request Description
+      // 1. Set Request Description
       const descBox = Array.from(doc.querySelectorAll('textarea, input[type="text"]')).find(el => {
         const row = el.closest('tr') || el.parentElement;
         return row && (row.innerText.includes('Request Description') || el.name?.includes('Description'));
@@ -42,46 +37,37 @@ function createTicketWorkflow(ticketData = {}) {
         descBox.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
-      // 3. Tambahkan Detail Service (Add)
+      // 2. Klik Add Detail Service
       const addBtn = Array.from(doc.querySelectorAll('a')).find(a => 
-        a.innerText.trim() === 'Add' && a.closest('div[name*="Detail"], div[id*="Detail"]')
+        a.innerText.trim() === 'Add' && (a.className.includes('toolbar-button') || a.closest('div[name*="Detail"], div[id*="Detail"]'))
       );
-      if (addBtn) {
+      if (addBtn && !addBtn.className.includes('disabled')) {
         addBtn.click();
         await new Promise(r => setTimeout(r, 800));
       }
 
-      // 4. Simpan baris Detail Service (Save)
-      const saveBtn = Array.from(doc.querySelectorAll('a')).find(a => 
-        a.innerText.trim() === 'Save' && a.closest('div[name*="Detail"], div[id*="Detail"]')
-      );
-      if (saveBtn) {
-        saveBtn.click();
-        await new Promise(r => setTimeout(r, 800));
-      }
-
-      // 5. Load E-Sign
+      // 3. Load E-Sign
       const loadSignBtn = Array.from(doc.querySelectorAll('a')).find(a => a.innerText.trim() === 'LOAD E-SIGN');
       if (loadSignBtn) {
         loadSignBtn.click();
         await new Promise(r => setTimeout(r, 800));
       }
 
-      // 6. Submit Ticket
+      // 4. Submit Ticket
       const submitBtn = Array.from(doc.querySelectorAll('a')).find(a => a.innerText.trim() === 'Submit');
       if (submitBtn) {
         submitBtn.click();
         await new Promise(r => setTimeout(r, 1200));
       }
 
-      // 7. Handle Confirmation Modal "Are you sure ?"
+      // 5. Handle Confirmation Modal "Are you sure ?"
       const okButtons = Array.from(doc.querySelectorAll('a, button')).filter(el => el.innerText.trim() === 'OK');
       if (okButtons.length > 0) {
         okButtons[okButtons.length - 1].click();
         await new Promise(r => setTimeout(r, 2000));
       }
 
-      // 8. Capture Result Notification (Doc Number / Workflow ID)
+      // 6. Capture Result Notification (Doc Number / Workflow ID)
       let resultText = "Submitted";
       const resultModal = Array.from(doc.querySelectorAll('div, p, span')).find(el => el.innerText && el.innerText.includes('Workflow ID :'));
       if (resultModal) {
@@ -100,38 +86,47 @@ function createTicketWorkflow(ticketData = {}) {
 // Auto-run if executed directly via node src/create_ticket.js
 if (require.main === module) {
   const puppeteer = require('puppeteer-core');
-  const CDP_ENDPOINT = process.env.CDP_WS_ENDPOINT;
 
   (async () => {
     try {
-      console.log('🚀 Menjalankan script create_ticket via Puppeteer...');
+      console.log('🚀 Menjalankan create_ticket automation...');
       let browser;
+
       if (CDP_ENDPOINT) {
+        console.log(`📡 Menghubungkan ke browser via CDP: ${CDP_ENDPOINT}`);
         browser = await puppeteer.connect({ browserWSEndpoint: CDP_ENDPOINT });
       } else {
-        const executablePath = process.env.CHROME_PATH || 
-          (process.platform === 'win32' 
-            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' 
-            : '/usr/bin/google-chrome' || '/usr/bin/chromium-browser');
+        const executablePath = getChromePath();
+        console.log(`🌐 Membuka Chrome browser (${executablePath})...`);
         browser = await puppeteer.launch({
           headless: false,
           executablePath,
-          args: ['--no-sandbox', '--disable-setuid-sandbox']
+          userDataDir: USER_DATA_DIR,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--ignore-certificate-errors',
+            '--start-maximized'
+          ]
         });
       }
 
       const pages = await browser.pages();
       let page = pages.find(p => p.url().includes('GAServiceTicketing'));
       if (!page) {
-        page = await browser.newPage();
-        await page.goto(FORM_URL, { waitUntil: 'networkidle2' });
+        page = pages[0] || (await browser.newPage());
+        console.log(`⏳ Membuka form tiket: ${FORM_URL}`);
+        await page.goto(FORM_URL, { waitUntil: 'networkidle2', timeout: 60000 });
       }
 
-      console.log('📄 Mengeksekusi workflow createTicket di halaman browser...');
+      console.log('📄 Mengeksekusi workflow createTicket di halaman K2 SmartForms...');
       const res = await page.evaluate(createTicketWorkflow);
-      console.log('✅ Hasil:', res);
+      console.log('🎉 Hasil eksekusi:', res);
+
+      console.log('✨ Tiket berhasil dibuat.');
     } catch (err) {
-      console.error('❌ Gagal menjalankan create_ticket:', err.message);
+      console.error('❌ Terjadi kesalahan saat create_ticket:', err.message);
+      process.exit(1);
     }
   })();
 }
