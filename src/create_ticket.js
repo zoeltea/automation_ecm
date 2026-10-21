@@ -97,6 +97,45 @@ function createTicketWorkflow(ticketData = {}) {
   });
 }
 
+// Auto-run if executed directly via node src/create_ticket.js
+if (require.main === module) {
+  const puppeteer = require('puppeteer-core');
+  const CDP_ENDPOINT = process.env.CDP_WS_ENDPOINT;
+
+  (async () => {
+    try {
+      console.log('🚀 Menjalankan script create_ticket via Puppeteer...');
+      let browser;
+      if (CDP_ENDPOINT) {
+        browser = await puppeteer.connect({ browserWSEndpoint: CDP_ENDPOINT });
+      } else {
+        const executablePath = process.env.CHROME_PATH || 
+          (process.platform === 'win32' 
+            ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' 
+            : '/usr/bin/google-chrome' || '/usr/bin/chromium-browser');
+        browser = await puppeteer.launch({
+          headless: false,
+          executablePath,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+      }
+
+      const pages = await browser.pages();
+      let page = pages.find(p => p.url().includes('GAServiceTicketing'));
+      if (!page) {
+        page = await browser.newPage();
+        await page.goto(FORM_URL, { waitUntil: 'networkidle2' });
+      }
+
+      console.log('📄 Mengeksekusi workflow createTicket di halaman browser...');
+      const res = await page.evaluate(createTicketWorkflow);
+      console.log('✅ Hasil:', res);
+    } catch (err) {
+      console.error('❌ Gagal menjalankan create_ticket:', err.message);
+    }
+  })();
+}
+
 module.exports = {
   createTicketWorkflow,
   FORM_URL
